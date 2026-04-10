@@ -1,0 +1,70 @@
+import os, requests, smtplib
+from bs4 import BeautifulSoup
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import date
+
+def get_listings():
+    url = "https://www.hepsiemlak.com/tekirdag-satilik-arsa"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    r = requests.get(url, headers=headers, timeout=15)
+    soup = BeautifulSoup(r.content, "html.parser")
+    
+    listings = []
+    cards = soup.select(".listing-item")[:10]
+    
+    if not cards:
+        cards = soup.select("[class*='listing']")[:10]
+    
+    for card in cards:
+        try:
+            title = card.select_one("[class*='title']")
+            price = card.select_one("[class*='price']")
+            location = card.select_one("[class*='location']")
+            link = card.select_one("a")
+            
+            listings.append({
+                "title": title.get_text(strip=True) if title else "-",
+                "price": price.get_text(strip=True) if price else "-",
+                "location": location.get_text(strip=True) if location else "-",
+                "link": "https://www.hepsiemlak.com" + link["href"] if link and link.get("href") else "-"
+            })
+        except:
+            continue
+    
+    return listings
+
+def send_email(subject, body):
+    msg = MIMEMultipart()
+    msg["From"] = os.environ["SENDER_EMAIL"]
+    msg["To"] = "mrc.tuna@hotmail.com"
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+        s.login(os.environ["SENDER_EMAIL"], os.environ["SENDER_PASSWORD"])
+        s.send_message(msg)
+
+def main():
+    today = date.today().strftime("%d %B %Y")
+    listings = get_listings()
+    
+    subject = f"Tekirdag Satilik Arsa - {today}"
+    body = f"Gunaydin!\n\nTekirdag satilik arsa ilanlari - {today}\n"
+    body += "=" * 40 + "\n\n"
+    
+    if not listings:
+        body += "Bugun ilan bulunamadi veya site erisimi engellendi.\n"
+    else:
+        for i, l in enumerate(listings, 1):
+            body += f"{i}. {l['title']}\n"
+            body += f"   Fiyat    : {l['price']}\n"
+            body += f"   Konum    : {l['location']}\n"
+            body += f"   Link     : {l['link']}\n\n"
+    
+    body += "---\nBu mail otomatik olarak gonderilmistir."
+    send_email(subject, body)
+
+if __name__ == "__main__":
+    main()
