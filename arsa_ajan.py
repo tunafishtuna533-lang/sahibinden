@@ -1,5 +1,4 @@
 import os, requests, smtplib
-from bs4 import BeautifulSoup
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import date
@@ -7,34 +6,22 @@ from datetime import date
 def get_listings():
     url = "https://www.hepsiemlak.com/tekirdag-satilik-arsa"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "tr-TR,tr;q=0.9",
     }
-    r = requests.get(url, headers=headers, timeout=15)
-    soup = BeautifulSoup(r.content, "html.parser")
+    r = requests.get(url, headers=headers, timeout=20)
     
     listings = []
-    cards = soup.select(".listing-item")[:10]
+    lines = r.text.split('\n')
     
-    if not cards:
-        cards = soup.select("[class*='listing']")[:10]
+    for i, line in enumerate(lines):
+        if 'ilan-basligi' in line or 'listing-title' in line or '"title"' in line:
+            listings.append(line.strip()[:200])
+        if len(listings) >= 10:
+            break
     
-    for card in cards:
-        try:
-            title = card.select_one("[class*='title']")
-            price = card.select_one("[class*='price']")
-            location = card.select_one("[class*='location']")
-            link = card.select_one("a")
-            
-            listings.append({
-                "title": title.get_text(strip=True) if title else "-",
-                "price": price.get_text(strip=True) if price else "-",
-                "location": location.get_text(strip=True) if location else "-",
-                "link": "https://www.hepsiemlak.com" + link["href"] if link and link.get("href") else "-"
-            })
-        except:
-            continue
-    
-    return listings
+    return listings, url
 
 def send_email(subject, body):
     msg = MIMEMultipart()
@@ -48,22 +35,22 @@ def send_email(subject, body):
 
 def main():
     today = date.today().strftime("%d %B %Y")
-    listings = get_listings()
+    listings, url = get_listings()
     
-    subject = f"Tekirdag Satilik Arsa - {today}"
-    body = f"Gunaydin!\n\nTekirdag satilik arsa ilanlari - {today}\n"
+    subject = "Tekirdag Satilik Arsa - " + today
+    body = "Gunaydin!\n\n"
+    body += "Tekirdag satilik arsa - " + today + "\n"
+    body += "Kaynak: " + url + "\n"
     body += "=" * 40 + "\n\n"
     
     if not listings:
-        body += "Bugun ilan bulunamadi veya site erisimi engellendi.\n"
+        body += "Bugun ilan verisi alinamadi. Siteyi manuel kontrol edin:\n" + url
     else:
-        for i, l in enumerate(listings, 1):
-            body += f"{i}. {l['title']}\n"
-            body += f"   Fiyat    : {l['price']}\n"
-            body += f"   Konum    : {l['location']}\n"
-            body += f"   Link     : {l['link']}\n\n"
+        body += "Son ilanlardan veri:\n\n"
+        for i, item in enumerate(listings, 1):
+            body += str(i) + ". " + item + "\n\n"
     
-    body += "---\nBu mail otomatik olarak gonderilmistir."
+    body += "\n---\nBu mail otomatik olarak gonderilmistir."
     send_email(subject, body)
 
 if __name__ == "__main__":
